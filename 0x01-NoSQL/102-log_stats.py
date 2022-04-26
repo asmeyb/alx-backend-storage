@@ -1,37 +1,37 @@
 #!/usr/bin/env python3
-"""log stats from collection
-"""
+"""an improved script that provides some stats about Nginx logs"""
 from pymongo import MongoClient
 
 
-METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"]
-PIPE = [{"$group": {"_id": "$ip", "count": {"$sum": 1}}},
-        {"$sort": {"count": -1}}, {"$limit": 10}]
-
-
-def log_stats(mongo_collection, option=None):
-    """ script that provides some stats about Nginx logs stored in MongoDB
-    """
-    items = {}
-    if option:
-        value = mongo_collection.count_documents(
-            {"method": {"$regex": option}})
-        print(f"\tmethod {option}: {value}")
-        return
-
-    result = mongo_collection.count_documents(items)
-    print(f"{result} logs")
-    print("Methods:")
-    for method in METHODS:
-        log_stats(nginx_collection, method)
-    status_check = mongo_collection.count_documents({"path": "/status"})
-    print(f"{status_check} status check")
-    print("IPs:")
-
-    for ip in mongo_collection.aggregate(PIPE):
-        print(f"\t{ip.get('_id')}: {ip.get('count')}")
-
-
 if __name__ == "__main__":
-    nginx_collection = MongoClient('mongodb://127.0.0.1:27017').logs.nginx
-    log_stats(nginx_collection)
+    '''
+    provides some stats about Nginx logs
+    improved by adding the top 10 of the most present IPs
+    '''
+    client = MongoClient('mongodb://127.0.0.1:27017')
+    col = client.logs.nginx
+    print("{} logs".format(col.estimated_document_count()))
+    print("Methods:")
+    for method in ["GET", "POST", "PUT", "PATCH", "DELETE"]:
+        count = col.count_documents({'method': method})
+        print("\tmethod {}: {}".format(method, count))
+    status_get = col.count_documents({'method': 'GET', 'path': "/status"})
+    print("{} status check".format(status_get))
+    print("IPs:")
+    topIps = col.aggregate([
+        {"$group":
+            {
+                "_id": "$ip",
+                "count": {"$sum": 1}
+            }
+        },
+        {"$sort": {"count": -1}},
+        {"$limit": 10},
+        {"$project": {
+            "_id": 0,
+            "ip": "$_id",
+            "count": 1
+        }}
+    ])
+    for ip in topIps:
+        print("\t{}: {}".format(ip.get('ip'), ip.get('count')))
